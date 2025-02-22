@@ -12,7 +12,8 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
-  AppState
+  AppState,
+  ToastAndroid
 } from 'react-native';
 import io from 'socket.io-client';
 import * as DocumentPicker from 'expo-document-picker';
@@ -21,7 +22,7 @@ import * as Sharing from 'expo-sharing';
 import * as Notifications from 'expo-notifications';
 
 // Configure socket with reconnection settings
-// Replace with your actual IP address!
+// IMPORTANT: Replace this with your actual local IP address
 const socket = io('http://192.168.0.18:5000', {
   reconnection: true,
   reconnectionAttempts: 10,
@@ -71,6 +72,29 @@ export default function HomeScreen() {
       subscription.remove();
     };
   }, [user]);
+
+  // Request notification permissions
+  useEffect(() => {
+    const requestPermissions = async () => {
+      try {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+        
+        if (existingStatus !== 'granted') {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+        
+        if (finalStatus !== 'granted') {
+          console.log('Permission for notifications not granted!');
+        }
+      } catch (error) {
+        console.log('Error requesting notification permissions:', error);
+      }
+    };
+    
+    requestPermissions();
+  }, []);
 
   // Try to reconnect to the server
   const tryReconnect = () => {
@@ -130,9 +154,6 @@ export default function HomeScreen() {
 
   // Handle socket connection events
   useEffect(() => {
-    // Request notification permissions
-    Notifications.requestPermissionsAsync();
-
     // Connect to server
     if (!socket.connected) {
       socket.connect();
@@ -169,8 +190,7 @@ export default function HomeScreen() {
         ToastAndroid.show('Reconnected to chat', ToastAndroid.SHORT);
       }
     });
-
-    // Handle room info
+	// Handle room info
     socket.on('roomsInfo', (rooms) => {
       setRoomsInfo(rooms);
     });
@@ -197,11 +217,43 @@ export default function HomeScreen() {
     };
   }, []);
 
+  // Handle previous messages loading from server
+  useEffect(() => {
+    socket.on('previousMessages', (messagesData) => {
+      console.log('Received previous messages:', messagesData.length);
+      
+      setMessages(prevMessages => {
+        // Filter out duplicates by messageId
+        const existingIds = new Set(prevMessages.map(m => m.messageId || ''));
+        const newMessages = messagesData.filter(m => !existingIds.has(m.messageId));
+        
+        // Combine existing and new messages, then sort by timestamp
+        const combinedMessages = [...prevMessages, ...newMessages];
+        return combinedMessages.sort((a, b) => 
+          new Date(a.timestamp) - new Date(b.timestamp)
+        );
+      });
+    });
+
+    return () => {
+      socket.off('previousMessages');
+    };
+  }, []);
+
   // Socket messaging events
   useEffect(() => {
     // Handle incoming messages
     socket.on('message', (messageData) => {
-      setMessages(prevMessages => [...prevMessages, messageData]);
+      console.log('Received message:', messageData);
+      
+      // Use function form to ensure working with the latest state
+      setMessages(prevMessages => {
+        // Avoid duplicates
+        if (messageData.messageId && prevMessages.some(msg => msg.messageId === messageData.messageId)) {
+          return prevMessages;
+        }
+        return [...prevMessages, messageData];
+      });
       
       // Increment unread count for other users or rooms
       if (messageData.senderId !== socket.id) {
@@ -218,8 +270,9 @@ export default function HomeScreen() {
 
     // Handle file sharing
     socket.on('fileShared', (fileData) => {
+      console.log('Received file shared event:', fileData);
+      
       // If it's a confirmation of our own file send, we can ignore it
-      // We've already added the file to messages in handleFilePick
       if (fileData.confirmation && fileData.senderId === socket.id) {
         console.log('Received confirmation for file:', fileData.name);
         return;
@@ -227,7 +280,7 @@ export default function HomeScreen() {
       
       // Only process if it's meant for this user
       if (fileData.recipientId && fileData.recipientId !== socket.id) return;
-      if (fileData.room && fileData.room !== room) return;
+      if (fileData.room && fileData.room !== room && fileData.senderId !== socket.id) return;
       
       // Ensure fileData has the proper structure
       const fileMessage = {
@@ -389,6 +442,7 @@ export default function HomeScreen() {
       socket.off('userJoined');
       socket.off('userOffline');
       socket.off('userLeft');
+      socket.off('previousMessages');
     };
   }, [selectedUser, room, socket.id]);
 
@@ -412,7 +466,7 @@ export default function HomeScreen() {
     if (scrollViewRef.current) {
       setTimeout(() => {
         scrollViewRef.current.scrollToEnd({ animated: true });
-      }, 100);
+      }, 300); // Slightly longer delay for better scrolling
     }
   }, [messages]);
 
@@ -477,10 +531,15 @@ export default function HomeScreen() {
 
     // Send the message
     socket.emit('message', messageData);
+    
+    // Also add it to our local state for better responsiveness
+    setMessages(prevMessages => [...prevMessages, messageData]);
+    
+    // Clear the input
     setMessage('');
   };
 
-  // Handle file picking
+  // Handle file picking with proper error handling
   const handleFilePick = async () => {
     try {
       // Check connection
@@ -489,7 +548,7 @@ export default function HomeScreen() {
         return;
       }
       
-      // Check if user has permission to post in this room
+      // Check posting permissions
       if (room && roomsInfo[room] && 
           roomsInfo[room].postingRoles && 
           !roomsInfo[room].postingRoles.includes(role)) {
@@ -498,6 +557,14 @@ export default function HomeScreen() {
         return;
       }
       
+      // Make sure DocumentPicker is available
+      if (!DocumentPicker) {
+        console.error('DocumentPicker is not available');
+        Alert.alert('Error', 'Document picking is not available on this device');
+        return;
+      }
+      
+      // Request document
       const result = await DocumentPicker.getDocumentAsync({
         type: '*/*', // All file types
         copyToCacheDirectory: true
@@ -523,12 +590,17 @@ export default function HomeScreen() {
         }
         
         try {
+          // Make sure FileSystem is available
+          if (!FileSystem) {
+            throw new Error('FileSystem is not available');
+          }
+          
           // Read the file as base64
           const base64Data = await FileSystem.readAsStringAsync(file.uri, {
             encoding: FileSystem.EncodingType.Base64
           });
           
-          // Create file data object - construct proper data URL
+          // Create file data object with proper data URL format
           const mimeType = file.mimeType || 'application/octet-stream';
           const fileData = {
             name: file.name,
@@ -539,7 +611,7 @@ export default function HomeScreen() {
             role: user.role,
             timestamp: new Date().toISOString(),
             messageId: messageId,
-            data: `data:${mimeType};base64,${base64Data}` // Properly formatted data URL
+            data: `data:${mimeType};base64,${base64Data}`
           };
           
           // Add recipient or room information
@@ -553,7 +625,7 @@ export default function HomeScreen() {
           // Send file through socket
           socket.emit('fileShared', fileData);
           
-          // Always add message to local state to show the sent file immediately
+          // Add to local messages immediately for better responsiveness
           const fileMessage = {
             text: `Shared file: ${file.name}`,
             sender: user.name,
@@ -582,23 +654,31 @@ export default function HomeScreen() {
           
         } catch (readError) {
           console.error('Error reading file:', readError);
-          Alert.alert('Error', 'Failed to read the file');
+          Alert.alert('Error', 'Failed to read the file: ' + readError.message);
         }
       }
     } catch (error) {
       console.error('Error picking document:', error);
-      Alert.alert('Error', 'Failed to pick document');
+      Alert.alert('Error', 'Failed to pick document: ' + error.message);
     }
   };
 
   // Handle file download/sharing
   const handleFileShare = async (fileData) => {
     try {
+      // Make sure FileSystem and Sharing are available
+      if (!FileSystem || !Sharing) {
+        throw new Error('File system or sharing is not available');
+      }
+      
       // Create a temporary file
       const fileUri = FileSystem.cacheDirectory + fileData.name;
       
-      // Extract base64 data and write to the file
-      const base64Data = fileData.data.split(',')[1];
+      // Extract base64 data
+      const base64DataParts = fileData.data.split(',');
+      const base64Data = base64DataParts.length > 1 ? base64DataParts[1] : base64DataParts[0];
+      
+      // Write to file
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
         encoding: FileSystem.EncodingType.Base64
       });
@@ -614,7 +694,7 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('Error sharing file:', error);
-      Alert.alert('Error', 'Failed to share file');
+      Alert.alert('Error', 'Failed to share file: ' + error.message);
     }
   };
 
@@ -706,7 +786,12 @@ export default function HomeScreen() {
            (selectedUser ? `Chat with ${selectedUser.name}` : `Room: ${room}`)}
         </Text>
         <View style={styles.headerButtons}>
-          <Text style={styles.welcomeText}>Hello, {user.name}</Text>
+          <View style={styles.userInfo}>
+            <Text style={styles.welcomeText}>{user.name}</Text>
+            <View style={[styles.roleBadge, role === 'lecturer' ? styles.lecturerBadge : styles.studentBadge]}>
+              <Text style={styles.roleBadgeText}>{role === 'lecturer' ? 'L' : 'S'}</Text>
+            </View>
+          </View>
           <TouchableOpacity 
             style={styles.fileStorageButton}
             onPress={() => setShowFileStorage(!showFileStorage)}
@@ -1089,10 +1174,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
   welcomeText: {
     color: 'white',
     fontSize: 12,
-    marginRight: 10,
+    marginRight: 5,
+  },
+  roleBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lecturerBadge: {
+    backgroundColor: '#2196F3',  // Blue for lecturer
+  },
+  studentBadge: {
+    backgroundColor: '#FF9800',  // Orange for student
+  },
+  roleBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   menuButton: {
     padding: 5,

@@ -1,38 +1,576 @@
+/* Base App Styles */
 .App {
   text-align: center;
-}
-
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+  max-width: 1200px;
+  margin: 0 auto;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .App-header {
   background-color: #282c34;
-  min-height: 100vh;
+  padding: 20px;
+  color: white;
+  position: relative;
+}
+
+.App-header h1 {
+  margin: 0;
+}
+
+.login-container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.login-form {
+  background-color: #f1f1f1;
+  padding: 20px;
+  border-radius: 5px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  width: 300px;
+}
+
+.login-form input,
+.login-form select {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.login-form button {
+  width: 100%;
+  padding: 10px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chat-container {
+  flex: 1;
+  display: flex;
+  height: calc(100% - 100px);
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 250px;
+  background-color: #f1f1f1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
+  border-right: 1px solid #ddd;
+}
+
+.rooms-section,
+.users-section {
+  padding: 15px;
+}
+
+.rooms-section h3,
+.users-section h3 {
+  margin-top: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ddd;
+}
+
+.room, 
+.user {
+  padding: 8px 10px;
+  margin-bottom: 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.room:hover,
+.user:hover {
+  background-color: #e0e0e0;
+}
+
+.room.active,
+.user.active {
+  background-color: #4CAF50;
   color: white;
 }
 
-.App-link {
-  color: #61dafb;
+.user {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.user-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-weight: bold;
+}
+
+.user-role {
+  font-size: 0.8em;
+  color: #666;
+}
+
+.user.active .user-role {
+  color: #eee;
+}
+
+.user-status {
+  display: flex;
+  align-items: center;
+}
+
+.no-users {
+  font-style: italic;
+  color: #999;
+  text-align: center;
+  padding: 10px;
+}
+
+.main-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background-color: white;
+}
+
+.chat-header {
+  padding: 15px;
+  background-color: #f9f9f9;
+  border-bottom: 1px solid #ddd;
+}
+
+.chat-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+  background-color: #f9f9f9;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.message {
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 5px;
+  max-width: 70%;
+  text-align: left;
+  position: relative;
+}
+
+.my-message {
+  background-color: #dcf8c6;
+  align-self: flex-end;
+}
+
+.other-message {
+  background-color: #f1f0f0;
+}
+
+.system-message {
+  background-color: #e6e6e6;
+  color: #666;
+  font-style: italic;
+  align-self: center;
+  font-size: 0.9em;
+}
+
+.message-header {
+  font-size: 0.8em;
+  margin-bottom: 5px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.sender {
+  font-weight: bold;
+}
+
+.role {
+  color: #666;
+}
+
+.message-form {
+  display: flex;
+  padding: 15px;
+  border-top: 1px solid #ddd;
+}
+
+.message-form input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px 0 0 4px;
+}
+
+.message-form button {
+  padding: 10px 20px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+}
+
+/* File sharing styles */
+.attachment-button {
+  margin-right: 10px;
+}
+
+.file-label {
+  cursor: pointer;
+  padding: 10px;
+  font-size: 20px;
+}
+
+.file-attachment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #f9f9f9;
+  padding: 5px 10px;
+  border-radius: 4px;
+  margin-top: 5px;
+}
+
+.file-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.file-name {
+  font-weight: bold;
+}
+
+.file-size {
+  font-size: 0.8em;
+  color: #666;
+}
+
+.download-button {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8em;
+}
+
+/* Connection status */
+.connection-status {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.connection-status.offline {
+  background-color: #ff6b6b;
+  color: white;
+}
+
+/* User info and logout */
+.user-info-header {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+}
+
+.welcome-text {
+  color: white;
+  margin-right: 10px;
+  font-size: 14px;
+}
+
+.logout-button {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.logout-button:hover {
+  background-color: #d32f2f;
+}
+
+.file-storage-button {
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 10px;
+}
+
+.file-storage-button:hover {
+  background-color: #0b7dda;
+}
+
+.file-storage-button.back {
+  background-color: #555;
+}
+
+.file-storage-button.back:hover {
+  background-color: #333;
+}
+
+/* Notifications */
+.notifications-dropdown {
+  position: relative;
+  display: inline-block;
+  margin-left: 20px;
+}
+
+.notifications-button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.notifications-content {
+  display: none;
+  position: absolute;
+  right: 0;
+  background-color: #f9f9f9;
+  min-width: 300px;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+  z-index: 20;
+  max-height: 400px;
+  overflow-y: auto;
+  border-radius: 4px;
+}
+
+.notifications-dropdown:hover .notifications-content {
+  display: block;
+}
+
+.notifications-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.notifications-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.clear-notifications {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.notification-item {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  position: relative;
+  font-size: 14px;
+}
+
+.dismiss-notification {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+/* Unread badges */
+.unread-badge {
+  background-color: #ff4d4f;
+  color: white;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 10px;
+  margin-left: 5px;
+  font-weight: bold;
+}
+
+/* Room list improvements */
+.room {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.room-name {
+  display: flex;
+  align-items: center;
+}
+
+.read-only-label {
+  font-size: 10px;
+  color: #999;
+  margin-left: auto;
+  font-style: italic;
+}
+
+.read-only-header {
+  font-size: 14px;
+  color: #999;
+  font-weight: normal;
+  font-style: italic;
+}
+
+/* User status indicators */
+.offline {
+  opacity: 0.7;
+}
+
+.offline-indicator {
+  font-size: 10px;
+  color: #ff6b6b;
+  margin-left: 5px;
+  font-style: italic;
+}
+
+.user-offline-status {
+  font-size: 14px;
+  color: #ff6b6b;
+  font-weight: normal;
+  font-style: italic;
+}
+
+/* Disabled elements */
+.file-label.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+/* File Storage Page */
+.file-storage-container {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.file-storage-container h2 {
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+.file-storage-tabs {
+  display: flex;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #ddd;
+  overflow-x: auto;
+}
+
+.file-tab {
+  background: none;
+  border: none;
+  padding: 10px 15px;
+  cursor: pointer;
+  font-size: 14px;
+  position: relative;
+  white-space: nowrap;
+}
+
+.file-tab:hover {
+  background-color: #f5f5f5;
+}
+
+.file-tab.active {
+  font-weight: bold;
+  color: #4CAF50;
+  border-bottom: 2px solid #4CAF50;
+}
+
+.file-list {
+  flex: 1;
+  overflow-y: auto;
+}
+  
+ .file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.file-item:hover {
+  background-color: #f9f9f9;
+}
+
+.file-item-info {
+  flex: 1;
+}
+
+.file-item-name {
+  font-weight: bold;
+  display: block;
+  margin-bottom: 5px;
+}
+
+.file-item-meta {
+  display: flex;
+  font-size: 12px;
+  color: #666;
+}
+
+.file-item-size,
+.file-item-from {
+  margin-right: 15px;
+}
+
+.file-item-date {
+  color: #999;
+}
+
+.no-files {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+  font-style: italic;
 }
