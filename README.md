@@ -73,7 +73,18 @@ To access the mobile client app, **download the Expo Go app** from:
 
 Once installed, scan the QR code displayed in the terminal after running `npx expo start`.
 
-### 5. Additional Setup (if needed)
+### 5. Update Mobile Client Configuration
+In the `mobile-client/index.js` file, update the **socket connection** to use your local IP address instead of `localhost`. Run the following command to find your IPv4 address:
+```sh
+ipconfig
+```
+Then, update the `socket` connection in `index.js` as follows:
+```javascript
+import io from 'socket.io-client';
+const socket = io('http://YOUR_IPV4_ADDRESS:5000'); // Replace YOUR_IPV4_ADDRESS with the actual IP
+```
+
+### 6. Additional Setup (if needed)
 - Ensure `.env` files are correctly configured for each component if required.
 - Install `expo-cli` globally for mobile client development:
   ```sh
