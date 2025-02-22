@@ -6,13 +6,13 @@ import {
   TextInput, 
   Pressable, 
   ScrollView, 
+  KeyboardAvoidingView, 
+  Platform, 
   SafeAreaView, 
   FlatList,
   TouchableOpacity,
   Alert,
-  AppState,
-  ToastAndroid,
-  Platform
+  AppState
 } from 'react-native';
 import io from 'socket.io-client';
 import * as DocumentPicker from 'expo-document-picker';
@@ -22,7 +22,7 @@ import * as Notifications from 'expo-notifications';
 
 // Configure socket with reconnection settings
 // Replace with your actual IP address!
-const socket = io('http://192.168.1.X:5000', {
+const socket = io('http://192.168.0.18:5000', {
   reconnection: true,
   reconnectionAttempts: 10,
   reconnectionDelay: 1000,
@@ -52,6 +52,8 @@ export default function HomeScreen() {
   const [roomsInfo, setRoomsInfo] = useState({});
   const [connected, setConnected] = useState(socket.connected);
   const [reconnecting, setReconnecting] = useState(false);
+  const [unreadCount, setUnreadCount] = useState({});
+  const [showFileStorage, setShowFileStorage] = useState(false);
   const scrollViewRef = useRef();
   const appState = useRef(AppState.currentState);
 
@@ -99,6 +101,11 @@ export default function HomeScreen() {
     }
   };
 
+  // Get files for the file storage page
+  const getFiles = () => {
+    return messages.filter(msg => msg.isFile);
+  };
+
   // Show notification
   const showNotification = (title, body, data = {}) => {
     // Only show notifications if we have permission
@@ -112,9 +119,9 @@ export default function HomeScreen() {
           },
           trigger: null, // Show immediately
         });
-      } else {
-        // For Android, use ToastAndroid instead
-        if (Platform.OS === 'android') {
+      } else if (Platform.OS === 'android') {
+        // For Android, try to show a toast notification
+        if (Platform.OS === 'android' && ToastAndroid) {
           ToastAndroid.show(`${title}: ${body}`, ToastAndroid.SHORT);
         }
       }
@@ -158,7 +165,7 @@ export default function HomeScreen() {
       setReconnecting(false);
       
       // Show confirmation
-      if (Platform.OS === 'android') {
+      if (Platform.OS === 'android' && ToastAndroid) {
         ToastAndroid.show('Reconnected to chat', ToastAndroid.SHORT);
       }
     });
@@ -195,6 +202,18 @@ export default function HomeScreen() {
     // Handle incoming messages
     socket.on('message', (messageData) => {
       setMessages(prevMessages => [...prevMessages, messageData]);
+      
+      // Increment unread count for other users or rooms
+      if (messageData.senderId !== socket.id) {
+        if ((messageData.room && messageData.room !== room) || 
+            (messageData.senderId && selectedUser?.id !== messageData.senderId)) {
+          const key = messageData.room || messageData.senderId;
+          setUnreadCount(prev => ({
+            ...prev,
+            [key]: (prev[key] || 0) + 1
+          }));
+        }
+      }
     });
 
     // Handle file sharing
@@ -241,6 +260,18 @@ export default function HomeScreen() {
         }
         return [...prevMessages, fileMessage];
       });
+      
+      // Increment unread count
+      if (fileData.senderId !== socket.id) {
+        if ((fileData.room && fileData.room !== room) || 
+            (fileData.senderId && selectedUser?.id !== fileData.senderId)) {
+          const key = fileData.room || fileData.senderId;
+          setUnreadCount(prev => ({
+            ...prev,
+            [key]: (prev[key] || 0) + 1
+          }));
+        }
+      }
     });
 
     // Handle notifications
@@ -253,26 +284,28 @@ export default function HomeScreen() {
         case 'newMessage':
           showNotification(
             `New message from ${notification.from}`,
-            notification.preview
+            notification.preview || 'New message'
           );
           break;
         case 'newRoomMessage':
           showNotification(
             `New message in ${notification.room}`,
-            `${notification.from}: ${notification.preview}`
+            `${notification.from}: ${notification.preview || 'New message'}`
           );
           break;
         case 'newFile':
           showNotification(
             `New file from ${notification.from}`,
-            `Shared file: ${notification.fileName}`
+            `Shared file: ${notification.fileName || 'File'}`
           );
           break;
         case 'newRoomFile':
           showNotification(
             `New file in ${notification.room}`,
-            `${notification.from} shared file: ${notification.fileName}`
+            `${notification.from} shared file: ${notification.fileName || 'File'}`
           );
+          break;
+        default:
           break;
       }
     });
@@ -359,10 +392,27 @@ export default function HomeScreen() {
     };
   }, [selectedUser, room, socket.id]);
 
+  // Reset unread count when changing room or selected user
+  useEffect(() => {
+    if (room) {
+      setUnreadCount(prev => ({
+        ...prev,
+        [room]: 0
+      }));
+    } else if (selectedUser) {
+      setUnreadCount(prev => ({
+        ...prev,
+        [selectedUser.id]: 0
+      }));
+    }
+  }, [room, selectedUser]);
+
   // Auto-scroll to the bottom of messages
   useEffect(() => {
     if (scrollViewRef.current) {
-      scrollViewRef.current.scrollToEnd({ animated: true });
+      setTimeout(() => {
+        scrollViewRef.current.scrollToEnd({ animated: true });
+      }, 100);
     }
   }, [messages]);
 
@@ -407,13 +457,14 @@ export default function HomeScreen() {
     }
 
     // Prepare message data
+    const messageId = Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
     const messageData = {
       text: message,
       sender: user.name,
       senderId: socket.id,
       role: user.role,
       timestamp: new Date().toISOString(),
-      messageId: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9)
+      messageId: messageId
     };
 
     // Add recipient or room information
@@ -465,7 +516,7 @@ export default function HomeScreen() {
         const messageId = Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
         
         // Show sending indicator
-        if (Platform.OS === 'android') {
+        if (Platform.OS === 'android' && ToastAndroid) {
           ToastAndroid.show('Sending file...', ToastAndroid.SHORT);
         } else {
           Alert.alert('Sending', 'The file is being sent...');
@@ -502,7 +553,7 @@ export default function HomeScreen() {
           // Send file through socket
           socket.emit('fileShared', fileData);
           
-// Always add message to local state to show the sent file immediately
+          // Always add message to local state to show the sent file immediately
           const fileMessage = {
             text: `Shared file: ${file.name}`,
             sender: user.name,
@@ -565,6 +616,24 @@ export default function HomeScreen() {
       console.error('Error sharing file:', error);
       Alert.alert('Error', 'Failed to share file');
     }
+  };
+
+  // Logout handler
+  const handleLogout = () => {
+    // Send logout notification to server
+    if (socket.connected) {
+      socket.emit('userLogout');
+    }
+    
+    // Clear all states
+    setUser(null);
+    setMessages([]);
+    setUsers([]);
+    setSelectedUser(null);
+    setRoom(null);
+    setUnreadCount({});
+    setShowFileStorage(false);
+    setShowSidebar(false);
   };
 
   // Render login screen
@@ -633,13 +702,29 @@ export default function HomeScreen() {
           <Text style={styles.menuButtonText}>☰</Text>
         </Pressable>
         <Text style={styles.headerText}>
-          {selectedUser ? `Chat with ${selectedUser.name}` : `Room: ${room}`}
+          {showFileStorage ? "File Storage" : 
+           (selectedUser ? `Chat with ${selectedUser.name}` : `Room: ${room}`)}
         </Text>
-        {!connected && (
-          <TouchableOpacity style={styles.offlineIndicator} onPress={tryReconnect}>
-            <Text style={styles.offlineText}>⚠️ Offline</Text>
+        <View style={styles.headerButtons}>
+          <Text style={styles.welcomeText}>Hello, {user.name}</Text>
+          <TouchableOpacity 
+            style={styles.fileStorageButton}
+            onPress={() => setShowFileStorage(!showFileStorage)}
+          >
+            <Text style={styles.buttonText}>{showFileStorage ? "Back" : "Files"}</Text>
           </TouchableOpacity>
-        )}
+          <TouchableOpacity 
+            style={styles.logoutButton}
+            onPress={handleLogout}
+          >
+            <Text style={styles.buttonText}>Logout</Text>
+          </TouchableOpacity>
+          {!connected && (
+            <TouchableOpacity style={styles.offlineIndicator} onPress={tryReconnect}>
+              <Text style={styles.offlineText}>⚠️ Offline</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {/* Sidebar for rooms and users */}
@@ -666,9 +751,16 @@ export default function HomeScreen() {
                     <Text style={room === roomKey ? styles.activeItemText : styles.itemText}>
                       {roomData.name || roomKey}
                     </Text>
-                    {roomData.postingRoles && !roomData.postingRoles.includes(role) && (
-                      <Text style={styles.readOnlyText}>Read-only</Text>
-                    )}
+                    <View style={styles.roomItemRight}>
+                      {unreadCount[roomKey] > 0 && (
+                        <View style={styles.badgeContainer}>
+                          <Text style={styles.badgeText}>{unreadCount[roomKey]}</Text>
+                        </View>
+                      )}
+                      {roomData.postingRoles && !roomData.postingRoles.includes(role) && (
+                        <Text style={styles.readOnlyText}>Read-only</Text>
+                      )}
+                    </View>
                   </Pressable>
                 )
               ) : (
@@ -679,12 +771,22 @@ export default function HomeScreen() {
                     onPress={() => handleJoinRoom('general')}
                   >
                     <Text style={room === 'general' ? styles.activeItemText : styles.itemText}>General</Text>
+                    {unreadCount['general'] > 0 && (
+                      <View style={styles.badgeContainer}>
+                        <Text style={styles.badgeText}>{unreadCount['general']}</Text>
+                      </View>
+                    )}
                   </Pressable>
                   <Pressable 
                     style={[styles.roomItem, room === 'assignments' && styles.activeItem]}
                     onPress={() => handleJoinRoom('assignments')}
                   >
                     <Text style={room === 'assignments' ? styles.activeItemText : styles.itemText}>Assignments</Text>
+                    {unreadCount['assignments'] > 0 && (
+                      <View style={styles.badgeContainer}>
+                        <Text style={styles.badgeText}>{unreadCount['assignments']}</Text>
+                      </View>
+                    )}
                   </Pressable>
                   <Pressable 
                     style={[styles.roomItem, room === 'announcements' && styles.activeItem]}
@@ -692,10 +794,17 @@ export default function HomeScreen() {
                   >
                     <Text style={room === 'announcements' ? styles.activeItemText : styles.itemText}>
                       Announcements
+                    </Text>
+                    <View style={styles.roomItemRight}>
+                      {unreadCount['announcements'] > 0 && (
+                        <View style={styles.badgeContainer}>
+                          <Text style={styles.badgeText}>{unreadCount['announcements']}</Text>
+                        </View>
+                      )}
                       {role !== 'lecturer' && role !== 'admin' && (
                         <Text style={styles.readOnlyText}> (Read-only)</Text>
                       )}
-                    </Text>
+                    </View>
                   </Pressable>
                 </>
               )
@@ -719,9 +828,16 @@ export default function HomeScreen() {
                   <Text style={selectedUser?.id === item.id ? styles.activeItemText : styles.itemText}>
                     {item.name} {item.offline ? "(offline)" : ""}
                   </Text>
-                  <Text style={selectedUser?.id === item.id ? styles.activeRoleText : styles.roleText}>
-                    {item.role}
-                  </Text>
+                  <View style={styles.userItemRight}>
+                    {unreadCount[item.id] > 0 && (
+                      <View style={styles.badgeContainer}>
+                        <Text style={styles.badgeText}>{unreadCount[item.id]}</Text>
+                      </View>
+                    )}
+                    <Text style={selectedUser?.id === item.id ? styles.activeRoleText : styles.roleText}>
+                      {item.role}
+                    </Text>
+                  </View>
                 </Pressable>
               )}
               ListEmptyComponent={
@@ -732,104 +848,220 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Main chat area with fixed height to avoid stuttering */}
-      <View style={styles.chatContainer}>
-        <ScrollView
-          style={styles.messagesContainer}
-          ref={scrollViewRef}
-          contentContainerStyle={{ paddingBottom: 20 }}
-        >
-          {messages
-            .filter(msg => {
-              // Filter messages based on current view (direct or room)
-              if (selectedUser) {
-                return (msg.senderId === selectedUser.id && msg.recipientId === socket.id) || 
-                      (msg.recipientId === selectedUser.id && msg.senderId === socket.id);
-              } else {
-                // System messages should only appear in their designated room
-                if (msg.system) {
-                  return msg.room === room;
-                }
-                return msg.room === room;
-              }
-            })
-            .map((msg, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.message,
-                  msg.system ? styles.systemMessage :
-                    msg.senderId === socket.id ? styles.myMessage : styles.otherMessage
-                ]}
+      {showFileStorage ? (
+        // File storage view
+        <View style={styles.fileStorageContainer}>
+          <View style={styles.fileTabsContainer}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity 
+                style={[styles.fileTab, !room && !selectedUser && styles.activeFileTab]}
+                onPress={() => {
+                  setRoom(null);
+                  setSelectedUser(null);
+                }}
               >
-                {!msg.system && (
-                  <View style={styles.messageHeader}>
-                    <Text style={styles.sender}>{msg.sender}</Text>
-                    <Text style={styles.role}>{msg.role}</Text>
-                    <Text style={styles.time}>
-                      {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                <Text style={[styles.fileTabText, !room && !selectedUser && styles.activeFileTabText]}>
+                  All Files
+                </Text>
+              </TouchableOpacity>
+              
+              {Object.entries(roomsInfo).length > 0 ? 
+                Object.entries(roomsInfo).map(([roomKey, roomData]) => 
+                  roomData.allowedRoles && roomData.allowedRoles.includes(role) && (
+                    <TouchableOpacity 
+                      key={roomKey}
+                      style={[styles.fileTab, room === roomKey && styles.activeFileTab]}
+                      onPress={() => {
+                        setRoom(roomKey);
+                        setSelectedUser(null);
+                      }}
+                    >
+                      <Text style={[styles.fileTabText, room === roomKey && styles.activeFileTabText]}>
+                        {roomData.name || roomKey}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                ) : (
+                  <>
+                    <TouchableOpacity 
+                      style={[styles.fileTab, room === 'general' && styles.activeFileTab]}
+                      onPress={() => {
+                        setRoom('general');
+                        setSelectedUser(null);
+                      }}
+                    >
+                      <Text style={[styles.fileTabText, room === 'general' && styles.activeFileTabText]}>
+                        General
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.fileTab, room === 'assignments' && styles.activeFileTab]}
+                      onPress={() => {
+                        setRoom('assignments');
+                        setSelectedUser(null);
+                      }}
+                    >
+                      <Text style={[styles.fileTabText, room === 'assignments' && styles.activeFileTabText]}>
+                        Assignments
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.fileTab, room === 'announcements' && styles.activeFileTab]}
+                      onPress={() => {
+                        setRoom('announcements');
+                        setSelectedUser(null);
+                      }}
+                    >
+                      <Text style={[styles.fileTabText, room === 'announcements' && styles.activeFileTabText]}>
+                        Announcements
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                )
+              }
+            </ScrollView>
+          </View>
+          
+          <FlatList
+            data={getFiles().filter(file => {
+              if (!room && !selectedUser) return true; // All files
+              if (room && file.room === room) return true; // Files from specific room
+              if (selectedUser && 
+                  ((file.senderId === selectedUser.id && file.recipientId === socket.id) || 
+                  (file.recipientId === selectedUser.id && file.senderId === socket.id))) {
+                return true; // Files from specific user chat
+              }
+              return false;
+            })}
+            keyExtractor={(_, index) => index.toString()}
+            ListEmptyComponent={
+              <Text style={styles.noFilesText}>No files found</Text>
+            }
+            renderItem={({item}) => (
+              <View style={styles.fileItem}>
+                <View style={styles.fileItemInfo}>
+                  <Text style={styles.fileItemName}>{item.fileData.name}</Text>
+                  <View style={styles.fileItemMeta}>
+                    <Text style={styles.fileItemSize}>{Math.round(item.fileData.size / 1024)} KB</Text>
+                    <Text style={styles.fileItemFrom}>
+                      {item.room 
+                        ? `In ${item.room}`
+                        : item.senderId === socket.id 
+                          ? `To ${item.recipientName}`
+                          : `From ${item.sender}`
+                      }
                     </Text>
                   </View>
-                )}
-                
-                {/* Display file message or regular text message */}
-                {!msg.system && msg.isFile ? (
-                  <View style={styles.fileAttachment}>
-                    <View style={styles.fileInfo}>
-                      <Text style={styles.fileName}>{msg.text}</Text>
-                      <Text style={styles.fileSize}>
-                        {Math.round(msg.fileData.size / 1024)} KB
+                </View>
+                <TouchableOpacity 
+                  style={styles.downloadButton}
+                  onPress={() => handleFileShare(item.fileData)}
+                >
+                  <Text style={styles.downloadButtonText}>Share</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          />
+        </View>
+      ) : (
+        // Chat view
+        <View style={styles.chatContainer}>
+          <ScrollView
+            style={styles.messagesContainer}
+            ref={scrollViewRef}
+            contentContainerStyle={{ paddingBottom: 20 }}
+          >
+            {messages
+              .filter(msg => {
+                // Filter messages based on current view (direct or room)
+                if (selectedUser) {
+                  return (msg.senderId === selectedUser.id && msg.recipientId === socket.id) || 
+                        (msg.recipientId === selectedUser.id && msg.senderId === socket.id);
+                } else {
+                  // System messages should only appear in their designated room
+                  if (msg.system) {
+                    return msg.room === room;
+                  }
+                  return msg.room === room;
+                }
+              })
+              .map((msg, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.message,
+                    msg.system ? styles.systemMessage :
+                      msg.senderId === socket.id ? styles.myMessage : styles.otherMessage
+                  ]}
+                >
+                  {!msg.system && (
+                    <View style={styles.messageHeader}>
+                      <Text style={styles.sender}>{msg.sender}</Text>
+                      <Text style={styles.role}>{msg.role}</Text>
+                      <Text style={styles.time}>
+                        {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </Text>
                     </View>
-                    <TouchableOpacity 
-                      style={styles.downloadButton}
-                      onPress={() => handleFileShare(msg.fileData)}
-                    >
-                      <Text style={styles.downloadButtonText}>Share</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <Text style={styles.messageText}>{msg.text}</Text>
-                )}
-              </View>
-            ))}
-        </ScrollView>
+                  )}
+                  
+                  {/* Display file message or regular text message */}
+                  {!msg.system && msg.isFile ? (
+                    <View style={styles.fileAttachment}>
+                      <View style={styles.fileInfo}>
+                        <Text style={styles.fileName}>{msg.text}</Text>
+                        <Text style={styles.fileSize}>
+                          {Math.round(msg.fileData.size / 1024)} KB
+                        </Text>
+                      </View>
+                      <TouchableOpacity 
+                        style={styles.downloadButton}
+                        onPress={() => handleFileShare(msg.fileData)}
+                      >
+                        <Text style={styles.downloadButtonText}>Share</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <Text style={styles.messageText}>{msg.text}</Text>
+                  )}
+                </View>
+              ))}
+          </ScrollView>
 
-        {/* Fixed message input area */}
-        <View style={styles.messageForm}>
-          <TouchableOpacity 
-            onPress={handleFilePick} 
-            style={[styles.attachmentButton, (!connected || 
-              (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))) && 
-              styles.disabledAttachment]}
-            disabled={!connected || (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))}
-          >
-            <Text style={styles.attachmentButtonText}>📎</Text>
-          </TouchableOpacity>
-          
-          <TextInput
-            style={styles.messageInput}
-            placeholder={
-              !connected ? "Reconnecting..." : 
-              (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role)) ?
-              "Read-only channel" : 
-              `Message ${selectedUser ? selectedUser.name : room}...`
-            }
-            value={message}
-            onChangeText={setMessage}
-            editable={connected && !(room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))}
-          />
-          <Pressable 
-            style={[styles.sendButton, (!connected || !message.trim() || 
-              (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))) && 
-              styles.disabledSend]}
-            onPress={handleSendMessage}
-            disabled={!connected || !message.trim() || (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))}
-          >
-            <Text style={styles.sendButtonText}>Send</Text>
-          </Pressable>
+          <View style={styles.messageForm}>
+            <TouchableOpacity 
+              onPress={handleFilePick} 
+              style={[styles.attachmentButton, (!connected || 
+                (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))) && 
+                styles.disabledAttachment]}
+              disabled={!connected || (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))}
+            >
+              <Text style={styles.attachmentButtonText}>📎</Text>
+            </TouchableOpacity>
+            
+            <TextInput
+              style={styles.messageInput}
+              placeholder={
+                !connected ? "Reconnecting..." : 
+                (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role)) ?
+                "Read-only channel" : 
+                `Message ${selectedUser ? selectedUser.name : room}...`
+              }
+              value={message}
+              onChangeText={setMessage}
+              editable={connected && !(room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))}
+            />
+            <Pressable 
+              style={[styles.sendButton, (!connected || !message.trim() || 
+                (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))) && 
+                styles.disabledSend]}
+              onPress={handleSendMessage}
+              disabled={!connected || !message.trim() || (room && roomsInfo[room]?.postingRoles && !roomsInfo[room].postingRoles.includes(role))}
+            >
+              <Text style={styles.sendButtonText}>Send</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -844,6 +1076,7 @@ const styles = StyleSheet.create({
     padding: 15,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   headerText: {
     color: 'white',
@@ -851,6 +1084,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     flex: 1,
     textAlign: 'center',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  welcomeText: {
+    color: 'white',
+    fontSize: 12,
+    marginRight: 10,
   },
   menuButton: {
     padding: 5,
@@ -864,11 +1106,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 10,
+    marginLeft: 5,
   },
   offlineText: {
     color: 'white',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  fileStorageButton: {
+    backgroundColor: '#2196F3',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+    marginRight: 5,
+  },
+  logoutButton: {
+    backgroundColor: '#f44336',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 4,
+  },
+  buttonText: {
+    color: 'white',
+    fontSize: 12,
   },
   reconnectingContainer: {
     flex: 1,
@@ -987,6 +1247,26 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  roomItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  badgeContainer: {
+    backgroundColor: '#ff4d4f',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 5,
+  },
+  badgeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
+    paddingHorizontal: 5,
   },
   userItem: {
     padding: 10,
@@ -994,6 +1274,10 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  userItemRight: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
   activeItem: {
@@ -1017,10 +1301,12 @@ const styles = StyleSheet.create({
   roleText: {
     color: '#777',
     fontSize: 12,
+    marginLeft: 5,
   },
   activeRoleText: {
     color: '#eee',
     fontSize: 12,
+    marginLeft: 5,
   },
   emptyListText: {
     fontStyle: 'italic',
@@ -1028,7 +1314,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     padding: 10,
   },
-  // Fixed layout to prevent stuttering
+  // Chat container
   chatContainer: {
     flex: 1,
     display: 'flex',
@@ -1154,4 +1440,61 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
   },
+  // File storage styles
+  fileStorageContainer: {
+    flex: 1,
+  },
+  fileTabsContainer: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  fileTab: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  activeFileTab: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#4CAF50',
+  },
+  fileTabText: {
+    color: '#666',
+  },
+  activeFileTabText: {
+    color: '#4CAF50',
+    fontWeight: 'bold',
+  },
+  fileItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  fileItemInfo: {
+    flex: 1,
+  },
+  fileItemName: {
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  fileItemMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  fileItemSize: {
+    fontSize: 12,
+    color: '#666',
+    marginRight: 10,
+  },
+  fileItemFrom: {
+    fontSize: 12,
+    color: '#666',
+  },
+  noFilesText: {
+    textAlign: 'center',
+    padding: 40,
+    color: '#999',
+    fontStyle: 'italic',
+  }
 });
