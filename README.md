@@ -29,11 +29,24 @@ cd ../mobile-client
 npm install
 ```
 
-### 3. Start the Project
+### 3. Setup MongoDB
+1. **Download MongoDB ZIP file** from the official MongoDB website.
+2. **Extract it to** `C:/mongodb/`
+3. **Create necessary directories**:
+   ```sh
+   mkdir C:\mongodb\data\db
+   mkdir C:\mongodb\data\log
+   ```
+4. **Open PowerShell in the `bin` folder** and run:
+   ```sh
+   .\mongod.exe --dbpath="C:\mongodb\data\db" --logpath="C:\mongodb\data\log\logfiles.txt"
+   ```
+
+### 4. Start the Project
 
 #### Start MongoDB (if not already running)
 ```sh
-mongod
+mongod --dbpath="C:\mongodb\data\db" --logpath="C:\mongodb\data\log\logfiles.txt"
 ```
 
 #### Start the Server
@@ -54,13 +67,23 @@ cd ../mobile-client
 npx expo start
 ```
 
-### 4. Additional Setup (if needed)
+To access the mobile client app, **download the Expo Go app** from:
+- [Google Play Store](https://play.google.com/store/apps/details?id=host.exp.exponent)
+- [Apple App Store](https://apps.apple.com/app/expo-go/id982107779)
+
+Once installed, scan the QR code displayed in the terminal after running `npx expo start`.
+
+### 5. Additional Setup (if needed)
 - Ensure `.env` files are correctly configured for each component if required.
 - Install `expo-cli` globally for mobile client development:
   ```sh
   npm install -g expo-cli
   ```
 - If using an Android emulator, use `10.0.2.2` to connect to localhost.
+- If you encounter Jest compatibility warnings:
+  ```sh
+  npm install jest-expo@~52.0.5
+  ```
 
 ---
 
